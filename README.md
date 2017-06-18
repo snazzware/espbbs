@@ -7,7 +7,7 @@ Current functionality:
 * Up to four simultaneous users
 * Guest Login
 * Flat file area browsing
-* Download of text files
+* Streaming of text files w/ pagination
 
 Planned functionality:
 * Registered Users, with public profiles
@@ -16,3 +16,7 @@ Planned functionality:
 * Z-Modem downloads
 * SD Card support
 * Teleconference (real-time multiuser chat system)
+
+Maybe:
+* A simple game or two (like "doors" on old DOS boards)
+* Simple forums
