@@ -12,6 +12,9 @@ WiFiServer server(23);
 #define MAX_INPUT 255
 #define MAX_PATH 255
 
+// Max number of lines to send client at once, when paging textfiles
+#define LINES_PER_PAGE        25
+
 #define STAGE_INIT            0
 
 // Login
@@ -45,12 +48,16 @@ struct BBSClient {
   char input[MAX_INPUT];
   int inputPos;
   char inputEcho;
+  bool inputSingle;
   void *data;
 };
 
 struct BBSFileClient {
   char path[MAX_PATH];
-  File *f;
+  File f;
+  char overflow[32];
+  int overflowSize;
+  bool nonstop;
 };
 
 #define MAX_CLIENTS 4
@@ -107,6 +114,66 @@ void sendTextFile(WiFiClient client, String filepath) {
   }
 }
 
+void clearEntireLine(int clientNumber) {
+  /*char buf[80];
+  memset(buf, 8, 80);
+  clients[clientNumber].write((uint8_t *)buf, 80);
+  memset(buf, 32, 80);
+  clients[clientNumber].write((uint8_t *)buf, 80);
+  memset(buf, 8, 80);
+  clients[clientNumber].write((uint8_t *)buf, 80);*/
+  cprintf(clientNumber, "\33[2K\r");
+}
+
+void pageTextFile(int clientNumber) {
+  char buf[32];
+  char buf2[32];
+  int len = 1;
+  int ofs = 0;
+  int lineCount = 0;
+  
+  clearEntireLine(clientNumber);
+
+  // check for any overflow from last pagination
+  if (((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize) {
+    clients[clientNumber].write((uint8_t *)((BBSFileClient *)(bbsclients[clientNumber].data))->overflow, ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize);
+    ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize = 0;
+  }
+  
+  while (len) {
+    ofs = 0;
+     len = ((BBSFileClient *)(bbsclients[clientNumber].data))->f.readBytes(buf, 32);
+     for (int i=0;i<len;i++) {
+      if (buf[i] == 10 || i+1 == len) {
+        buf2[ofs++] = buf[i];
+        if (buf[i] == 10) {
+          buf2[ofs++] = '\r';
+          lineCount++;
+        }
+        clients[clientNumber].write((uint8_t *)buf2, ofs);
+        ofs = 0;
+
+        if (lineCount >= LINES_PER_PAGE) {
+          if (!((BBSFileClient *)(bbsclients[clientNumber].data))->nonstop) {
+            cprintf(clientNumber, "ESC=Cancel, Space=Continue, Enter=Nonstop");
+            getInputSingle(clientNumber);
+          }
+          if (i+1 != len) {
+            memcpy(((BBSFileClient *)(bbsclients[clientNumber].data))->overflow, buf+i, len - i);
+            ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize = len - i;
+          }
+          return;
+        }
+      } else {
+        buf2[ofs++] = buf[i];
+      }
+     }
+  }
+  if (!len) {
+    ((BBSFileClient *)(bbsclients[clientNumber].data))->f.close();
+  }
+}
+
 void cprintf(int clientNumber, char *fmt, ...) {
   char buf[255];
   va_list va;
@@ -121,12 +188,18 @@ void getInput(int clientNumber) {
   bbsclients[clientNumber].inputPos = 0;
   bbsclients[clientNumber].inputEcho = 0;
   bbsclients[clientNumber].input[0] = 0;
+  bbsclients[clientNumber].inputSingle = false;
   bbsclients[clientNumber].inputting = true;
 }
 
 void getInput(int clientNumber, char echo) {
   getInput(clientNumber);
   bbsclients[clientNumber].inputEcho = echo;
+}
+
+void getInputSingle(int clientNumber) {
+  getInput(clientNumber);
+  bbsclients[clientNumber].inputSingle = true;
 }
 
 void action (int clientNumber, int actionId, int stageId) {
@@ -215,14 +288,37 @@ void loop() {
                       } else {
                         int selection = atoi(bbsclients[i].input);
                         Dir dir = SPIFFS.openDir(((BBSFileClient *)(bbsclients[i].data))->path);
-                        int readIdx = 1;
-                        while (dir.next() && readIdx <= selection) {
-                          if (readIdx == selection) {
-                            sendTextFile(clients[i], dir.fileName());
+                        if (selection > 0 && selection < 255) {
+                          int readIdx = 1;
+                          while (dir.next() && readIdx <= selection) {
+                            if (readIdx == selection) {
+                              ((BBSFileClient *)(bbsclients[i].data))->f = SPIFFS.open(dir.fileName(), "r");
+                              ((BBSFileClient *)(bbsclients[i].data))->nonstop = false;
+                              pageTextFile(i);
+                              action(i, BBS_FILES, BBS_FILES_READ);
+                            }
+                            readIdx++;
                           }
-                          readIdx++;
+                        } else { // selection out of bounds
+                          action(i, BBS_FILES);
                         }
-                        action(i, BBS_FILES);
+                      }
+                    }
+                  } break;
+                  case BBS_FILES_READ: {
+                    if (!((BBSFileClient *)(bbsclients[i].data))->f) {
+                      action(i, BBS_FILES);
+                    } else {
+                      if (!bbsclients[i].inputting || ((BBSFileClient *)(bbsclients[i].data))->nonstop) {
+                        if (bbsclients[i].input[0] == 13) { // ENTER
+                          ((BBSFileClient *)(bbsclients[i].data))->nonstop = true;
+                          pageTextFile(i);
+                        } else
+                        if (bbsclients[i].input[0] == 27) { // ESC
+                          action(i, BBS_FILES);
+                        } else {
+                          pageTextFile(i);
+                        }
                       }
                     }
                   } break;
@@ -267,13 +363,19 @@ void loop() {
             result = clients[i].read();
             if (result != 255) {
               if (bbsclients[i].inputting) {
+                if (bbsclients[i].inputSingle) {
+                  bbsclients[i].input[bbsclients[i].inputPos++] = result;
+                  bbsclients[i].inputting = false;
+                  bbsclients[i].input[bbsclients[i].inputPos] = 0;
+                  result = 0; // suppress echo
+                } else
                 if (result == 127 || result == 8) { // handle del / backspace
                   if (bbsclients[i].inputPos>0) {
                     result = 8; // convert DEL (127) to backspace (8)
                     bbsclients[i].input[bbsclients[i].inputPos] = 0;
                     bbsclients[i].inputPos--;
                   } else result = 0;
-                } else 
+                } else
                 if (result == 13) {
                   if (bbsclients[i].inputPos > 0) {
                     bbsclients[i].inputting = false;
@@ -314,6 +416,7 @@ void loop() {
           bbsclients[i].inputting = false;
           bbsclients[i].inputPos = 0;
           bbsclients[i].inputEcho = 0;
+          bbsclients[i].inputSingle = false;
           bbsclients[i].input[0] = 0;
           bbsclients[i].action = BBS_LOGIN;
           bbsclients[i].stage = STAGE_INIT;
