@@ -210,22 +210,20 @@ void loop() {
                    
                   case BBS_FILES_LIST: {
                     if (!bbsclients[i].inputting) {
-                      if (strlen(bbsclients[i].input)>0) {
-                        if (toupper(bbsclients[i].input[0]) == 'B') {   
-                          action(i, BBS_MAIN);
-                        } else {
-                          int selection = atoi(bbsclients[i].input);
-                          Dir dir = SPIFFS.openDir(((BBSFileClient *)(bbsclients[i].data))->path);
-                          int readIdx = 1;
-                          while (dir.next() && readIdx <= selection) {
-                            if (readIdx == selection) {
-                              sendTextFile(clients[i], dir.fileName());
-                            }
-                            readIdx++;
+                      if (toupper(bbsclients[i].input[0]) == 'B') {   
+                        action(i, BBS_MAIN);
+                      } else {
+                        int selection = atoi(bbsclients[i].input);
+                        Dir dir = SPIFFS.openDir(((BBSFileClient *)(bbsclients[i].data))->path);
+                        int readIdx = 1;
+                        while (dir.next() && readIdx <= selection) {
+                          if (readIdx == selection) {
+                            sendTextFile(clients[i], dir.fileName());
                           }
+                          readIdx++;
                         }
+                        action(i, BBS_FILES);
                       }
-                      action(i, BBS_FILES);
                     }
                   } break;
                   
