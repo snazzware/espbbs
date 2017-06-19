@@ -409,6 +409,11 @@ void loop() {
                     result = 8; // convert DEL (127) to backspace (8)
                     bbsclients[i].input[bbsclients[i].inputPos] = 0;
                     bbsclients[i].inputPos--;
+                    // backspace
+                    clients[i].write((char)result);
+                    // white space
+                    clients[i].write(' ');
+                    // final backspace will occur w/ normal echo code, below
                   } else result = 0;
                 } else
                 if (result == 13) {
