@@ -18,6 +18,11 @@ WiFiServer server(23);
 // Max number of lines to send client at once, when paging textfiles
 #define LINES_PER_PAGE        25
 
+// This pin will be set to high when a client connects
+#define CONNECT_INDICATOR_PIN D1
+// Duration in millis for how long we will leave the connect indicator pin high
+#define CONNECT_INDICATOR_DURATION 3000
+
 #define STAGE_INIT            0
 
 // Login
@@ -75,6 +80,7 @@ struct BBSInfo {
 WiFiClient clients[MAX_CLIENTS];
 BBSClient bbsclients[MAX_CLIENTS];
 BBSInfo bbsInfo;
+long connectIndicatorMillis;
 
 void persistBBSInfo() {
   File f = SPIFFS.open("/bbsinfo.dat", "w+");
@@ -94,6 +100,8 @@ void setup() {
     f.readBytes((char *)&bbsInfo, sizeof(bbsInfo));
     f.close();
   }
+
+  pinMode(CONNECT_INDICATOR_PIN, OUTPUT);
   
   WiFiManager wifiManager;
   wifiManager.autoConnect();
@@ -439,6 +447,9 @@ void loop() {
       else {
         clients[i] = server.available();
         if (clients[i]) {
+          digitalWrite(CONNECT_INDICATOR_PIN, HIGH);
+          connectIndicatorMillis = millis();
+          
           // Send telnet configuration - we'll handle echoes, and we do not want to be in linemode.
           clients[i].write(255); // IAC
           clients[i].write(251); // WILL
@@ -483,6 +494,11 @@ void loop() {
     sprintf(buf, "All nodes are currently in use.\r\n");
     client.write((uint8_t *)buf, strlen(buf));
     client.stop();
+  }
+
+  // reset connect indicator pin
+  if (connectIndicatorMillis + CONNECT_INDICATOR_DURATION <= millis()) {
+    digitalWrite(CONNECT_INDICATOR_PIN, LOW);
   }
 
   // Let ESP8266 do some stuff
