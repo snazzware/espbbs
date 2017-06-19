@@ -12,6 +12,9 @@ WiFiServer server(23);
 #define MAX_INPUT 255
 #define MAX_PATH 255
 
+// Number of bytes that we buffer at a time while streaming files to clients
+#define FILE_STREAM_BUFFER_SIZE 64
+
 // Max number of lines to send client at once, when paging textfiles
 #define LINES_PER_PAGE        25
 
@@ -55,8 +58,10 @@ struct BBSClient {
 struct BBSFileClient {
   char path[MAX_PATH];
   File f;
-  char overflow[32];
-  int overflowSize;
+  char buffer[FILE_STREAM_BUFFER_SIZE];
+  int bufferPosition;
+  int bufferUsed;
+  int lineCount;
   bool nonstop;
 };
 
@@ -126,51 +131,58 @@ void clearEntireLine(int clientNumber) {
 }
 
 void pageTextFile(int clientNumber) {
-  char buf[32];
-  char buf2[32];
-  int len = 1;
+  
+  char buf2[FILE_STREAM_BUFFER_SIZE];
   int ofs = 0;
-  int lineCount = 0;
+  BBSFileClient *client = ((BBSFileClient *)(bbsclients[clientNumber].data));
   
-  clearEntireLine(clientNumber);
+  //clearEntireLine(clientNumber);
 
-  // check for any overflow from last pagination
-  if (((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize) {
-    clients[clientNumber].write((uint8_t *)((BBSFileClient *)(bbsclients[clientNumber].data))->overflow, ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize);
-    ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize = 0;
-  }
   
-  while (len) {
-    ofs = 0;
-     len = ((BBSFileClient *)(bbsclients[clientNumber].data))->f.readBytes(buf, 32);
-     for (int i=0;i<len;i++) {
-      if (buf[i] == 10 || i+1 == len) {
-        buf2[ofs++] = buf[i];
-        if (buf[i] == 10) {
+    // If we have processed all of our buffered data, read in some more
+    if (client->bufferPosition >= client->bufferUsed) {
+      client->bufferPosition = 0;
+      client->bufferUsed = client->f.readBytes(client->buffer, FILE_STREAM_BUFFER_SIZE);
+    }
+    
+     for (int i=client->bufferPosition;i<client->bufferUsed;i++) {
+      if (client->buffer[i] == 10) {
+        buf2[ofs++] = client->buffer[i];
+        if (client->buffer[i] == 10) {
           buf2[ofs++] = '\r';
-          lineCount++;
+          client->lineCount++;
         }
         clients[clientNumber].write((uint8_t *)buf2, ofs);
         ofs = 0;
 
-        if (lineCount >= LINES_PER_PAGE) {
-          if (!((BBSFileClient *)(bbsclients[clientNumber].data))->nonstop) {
+        if (client->lineCount >= LINES_PER_PAGE) {
+          if (!client->nonstop) {
             cprintf(clientNumber, "ESC=Cancel, Space=Continue, Enter=Nonstop");
             getInputSingle(clientNumber);
+            client->lineCount = 0;
           }
-          if (i+1 != len) {
+          client->bufferPosition = i+1;
+          /*if (i+1 != len) {
             memcpy(((BBSFileClient *)(bbsclients[clientNumber].data))->overflow, buf+i, len - i);
             ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize = len - i;
-          }
+          }*/
           return;
         }
       } else {
-        buf2[ofs++] = buf[i];
+        buf2[ofs++] = client->buffer[i];
       }
      }
-  }
-  if (!len) {
-    ((BBSFileClient *)(bbsclients[clientNumber].data))->f.close();
+     // write what we've buffered to the client
+     if (ofs > 0) {
+      clients[clientNumber].write((uint8_t *)buf2, ofs);
+     }
+     
+     // Record final buffer position
+     client->bufferPosition = client->bufferUsed;
+
+  // If we did not obtain any more data this pass, close file
+  if (!client->bufferUsed) {
+    client->f.close();
   }
 }
 
@@ -293,7 +305,11 @@ void loop() {
                           while (dir.next() && readIdx <= selection) {
                             if (readIdx == selection) {
                               ((BBSFileClient *)(bbsclients[i].data))->f = SPIFFS.open(dir.fileName(), "r");
+                              ((BBSFileClient *)(bbsclients[i].data))->bufferPosition = 0;
+                              ((BBSFileClient *)(bbsclients[i].data))->bufferUsed = 0;
+                              ((BBSFileClient *)(bbsclients[i].data))->lineCount = 0;
                               ((BBSFileClient *)(bbsclients[i].data))->nonstop = false;
+                              bbsclients[i].input[0] = 0; // clear input
                               pageTextFile(i);
                               action(i, BBS_FILES, BBS_FILES_READ);
                             }
@@ -310,6 +326,11 @@ void loop() {
                       action(i, BBS_FILES);
                     } else {
                       if (!bbsclients[i].inputting || ((BBSFileClient *)(bbsclients[i].data))->nonstop) {
+                        
+                        if (bbsclients[i].input[0] > 0) {
+                          clearEntireLine(i); // clear the prompt
+                        }
+                        
                         if (bbsclients[i].input[0] == 13) { // ENTER
                           ((BBSFileClient *)(bbsclients[i].data))->nonstop = true;
                           pageTextFile(i);
@@ -319,6 +340,10 @@ void loop() {
                         } else {
                           pageTextFile(i);
                         }
+
+                        // clear the input
+                        bbsclients[i].input[0] = 0;
+                        
                       }
                     }
                   } break;
