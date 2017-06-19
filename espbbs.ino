@@ -65,15 +65,35 @@ struct BBSFileClient {
   bool nonstop;
 };
 
+struct BBSInfo {
+  int callersTotal;
+  int callersToday;
+};
+
 #define MAX_CLIENTS 4
 
 WiFiClient clients[MAX_CLIENTS];
 BBSClient bbsclients[MAX_CLIENTS];
+BBSInfo bbsInfo;
+
+void persistBBSInfo() {
+  File f = SPIFFS.open("/bbsinfo.dat", "w+");
+  if (f) {
+    f.write((unsigned char *)&bbsInfo, sizeof(bbsInfo));
+    f.close();
+  }
+}
 
 void setup() {
   Serial.begin(115200);
   
   SPIFFS.begin();
+
+  File f = SPIFFS.open("/bbsinfo.dat", "r");
+  if (f) {
+    f.readBytes((char *)&bbsInfo, sizeof(bbsInfo));
+    f.close();
+  }
   
   WiFiManager wifiManager;
   wifiManager.autoConnect();
@@ -440,8 +460,14 @@ void loop() {
           // Send the title file
           sendTextFile(clients[i], "/title.ans");
 
+          cprintf(i, "You are caller #%u today.\r\n", bbsInfo.callersToday, bbsInfo.callersTotal);
           cprintf(i, "Log in as 'guest', or type new to create an account.\r\n");
           clients[i].flush(); // discard initial telnet data from client
+
+          // update and save stats
+          bbsInfo.callersTotal++;
+          bbsInfo.callersToday++;
+          persistBBSInfo();
         }
       }
    }
