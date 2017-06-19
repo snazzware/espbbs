@@ -120,13 +120,6 @@ void sendTextFile(WiFiClient client, String filepath) {
 }
 
 void clearEntireLine(int clientNumber) {
-  /*char buf[80];
-  memset(buf, 8, 80);
-  clients[clientNumber].write((uint8_t *)buf, 80);
-  memset(buf, 32, 80);
-  clients[clientNumber].write((uint8_t *)buf, 80);
-  memset(buf, 8, 80);
-  clients[clientNumber].write((uint8_t *)buf, 80);*/
   cprintf(clientNumber, "\33[2K\r");
 }
 
@@ -136,49 +129,46 @@ void pageTextFile(int clientNumber) {
   int ofs = 0;
   BBSFileClient *client = ((BBSFileClient *)(bbsclients[clientNumber].data));
   
-  //clearEntireLine(clientNumber);
-
+  // If we have processed all of our buffered data, read in some more
+  if (client->bufferPosition >= client->bufferUsed) {
+    client->bufferPosition = 0;
+    client->bufferUsed = client->f.readBytes(client->buffer, FILE_STREAM_BUFFER_SIZE);
+  }
   
-    // If we have processed all of our buffered data, read in some more
-    if (client->bufferPosition >= client->bufferUsed) {
-      client->bufferPosition = 0;
-      client->bufferUsed = client->f.readBytes(client->buffer, FILE_STREAM_BUFFER_SIZE);
-    }
-    
-     for (int i=client->bufferPosition;i<client->bufferUsed;i++) {
+   for (int i=client->bufferPosition;i<client->bufferUsed;i++) {
+    if (client->buffer[i] == 10) {
+      buf2[ofs++] = client->buffer[i];
       if (client->buffer[i] == 10) {
-        buf2[ofs++] = client->buffer[i];
-        if (client->buffer[i] == 10) {
-          buf2[ofs++] = '\r';
-          client->lineCount++;
-        }
-        clients[clientNumber].write((uint8_t *)buf2, ofs);
-        ofs = 0;
-
-        if (client->lineCount >= LINES_PER_PAGE) {
-          if (!client->nonstop) {
-            cprintf(clientNumber, "ESC=Cancel, Space=Continue, Enter=Nonstop");
-            getInputSingle(clientNumber);
-            client->lineCount = 0;
-          }
-          client->bufferPosition = i+1;
-          /*if (i+1 != len) {
-            memcpy(((BBSFileClient *)(bbsclients[clientNumber].data))->overflow, buf+i, len - i);
-            ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize = len - i;
-          }*/
-          return;
-        }
-      } else {
-        buf2[ofs++] = client->buffer[i];
+        buf2[ofs++] = '\r';
+        client->lineCount++;
       }
-     }
-     // write what we've buffered to the client
-     if (ofs > 0) {
       clients[clientNumber].write((uint8_t *)buf2, ofs);
-     }
-     
-     // Record final buffer position
-     client->bufferPosition = client->bufferUsed;
+      ofs = 0;
+
+      if (client->lineCount >= LINES_PER_PAGE) {
+        if (!client->nonstop) {
+          cprintf(clientNumber, "ESC=Cancel, Space=Continue, Enter=Nonstop");
+          getInputSingle(clientNumber);
+          client->lineCount = 0;
+        }
+        client->bufferPosition = i+1;
+        /*if (i+1 != len) {
+          memcpy(((BBSFileClient *)(bbsclients[clientNumber].data))->overflow, buf+i, len - i);
+          ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize = len - i;
+        }*/
+        return;
+      }
+    } else {
+      buf2[ofs++] = client->buffer[i];
+    }
+   }
+   // write what we've buffered to the client
+   if (ofs > 0) {
+    clients[clientNumber].write((uint8_t *)buf2, ofs);
+   }
+   
+   // Record final buffer position
+   client->bufferPosition = client->bufferUsed;
 
   // If we did not obtain any more data this pass, close file
   if (!client->bufferUsed) {
