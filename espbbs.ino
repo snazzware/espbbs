@@ -40,11 +40,16 @@ WiFiServer server(23);
 // Logout
 #define BBS_LOGOUT            4
 
+// File Area
 #define BBS_FILES             5
 #define BBS_FILES_LIST        1
 #define BBS_FILES_READ        2
 
-
+// Users
+#define BBS_USER              6
+#define BBS_USER_NEW_NAME     1
+#define BBS_USER_NEW_PASSWORD 2
+#define BBS_USER_NEW_CONFIRM  3
 
 char data[1500];
 int ind = 0;
@@ -73,6 +78,12 @@ struct BBSFileClient {
 struct BBSInfo {
   int callersTotal;
   int callersToday;
+};
+
+struct BBSUser {
+  char password[64]; // Plaintext - not too concerned about actual security here, folks!
+  char twitterHandle[64];
+  char githubHandle[64];
 };
 
 #define MAX_CLIENTS 4
@@ -265,6 +276,9 @@ void loop() {
                       if (strcmp(bbsclients[i].input, "guest") == 0) {
                         action(i, BBS_GUEST);
                       } else 
+                      if (strcmp(bbsclients[i].input, "user") == 0) {
+                        action(i, BBS_USER);
+                      } else
                       if (strcmp(bbsclients[i].input, "new") == 0) {
                         cprintf(i, "Sorry, new user signups have not been implemented. Try 'guest'.\r\n");
                         action(i, BBS_LOGIN);
