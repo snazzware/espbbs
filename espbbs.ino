@@ -50,9 +50,17 @@ WiFiServer server(23);
 #define BBS_USER_NEW_NAME     1
 #define BBS_USER_NEW_PASSWORD 2
 #define BBS_USER_NEW_CONFIRM  3
+#define BBS_USER_NEW_FINALIZE 4
 
 char data[1500];
 int ind = 0;
+
+struct BBSUser {
+  char username[64]; // alphanumeric, lowercase
+  char password[64]; // Plaintext - not too concerned about actual security here, folks!
+  char twitterHandle[64];
+  char githubHandle[64];
+};
 
 struct BBSClient {
   int action;
@@ -63,6 +71,7 @@ struct BBSClient {
   char inputEcho;
   bool inputSingle;
   void *data;
+  BBSUser user;
 };
 
 struct BBSFileClient {
@@ -78,12 +87,6 @@ struct BBSFileClient {
 struct BBSInfo {
   int callersTotal;
   int callersToday;
-};
-
-struct BBSUser {
-  char password[64]; // Plaintext - not too concerned about actual security here, folks!
-  char twitterHandle[64];
-  char githubHandle[64];
 };
 
 #define MAX_CLIENTS 4
@@ -246,6 +249,9 @@ void getInputSingle(int clientNumber) {
 void action (int clientNumber, int actionId, int stageId) {
   bbsclients[clientNumber].action = actionId;
   bbsclients[clientNumber].stage = stageId;
+
+  // reset input when we change actions
+  bbsclients[clientNumber].input[0] = 0;
 }
 
 void action (int clientNumber, int actionId) {
@@ -267,8 +273,6 @@ void loop() {
               case BBS_LOGIN:
                 switch (bbsclients[i].stage) {
                   case STAGE_INIT:
-                    cprintf(i, "Node #%u - Username: ", i);
-                    getInput(i);
                     action(i, BBS_LOGIN, BBS_LOGIN_USERNAME);
                   break;
                   case BBS_LOGIN_USERNAME:
@@ -276,27 +280,123 @@ void loop() {
                       if (strcmp(bbsclients[i].input, "guest") == 0) {
                         action(i, BBS_GUEST);
                       } else 
-                      if (strcmp(bbsclients[i].input, "user") == 0) {
-                        action(i, BBS_USER);
-                      } else
                       if (strcmp(bbsclients[i].input, "new") == 0) {
-                        cprintf(i, "Sorry, new user signups have not been implemented. Try 'guest'.\r\n");
-                        action(i, BBS_LOGIN);
+                        action(i, BBS_USER);
                       } else {
-                        cprintf(i, "Password: ");
-                        getInput(i, '*');
-                        action(i, BBS_LOGIN, BBS_LOGIN_PASSWORD);
+                        bool valid = true;
+
+                        for (int j=0;j<strlen(bbsclients[i].input) && valid;j++) {
+                          if (!isalnum(bbsclients[i].input[j])) valid = false;
+                          else bbsclients[i].input[j] = tolower(bbsclients[i].input[j]);
+                        }
+
+                        if (valid) {
+                          strcpy(bbsclients[i].user.username, bbsclients[i].input);
+                          
+                          action(i, BBS_LOGIN, BBS_LOGIN_PASSWORD);
+                        } else {
+                          cprintf(i, "Invalid username. Usernames are lowercase, alphanumeric only.");
+                        }
                       }
+                    } else {
+                      cprintf(i, "Node #%u - Username: ", i);
+                      getInput(i);
                     }
                   break;
                   case BBS_LOGIN_PASSWORD:
-                    if (!bbsclients[i].inputting) {
-                      if (strlen(bbsclients[i].input)) {
-                        cprintf(i, "Nope!\r\n");
-                        action(i, BBS_LOGIN);
-                      } else {
-                        action(i, BBS_LOGIN);
+                    if (!bbsclients[i].inputting && strlen(bbsclients[i].input)) {
+                      bool valid = false;
+                      char testPath[255];
+                      sprintf(testPath, "/users/%s.dat", bbsclients[i].user.username);
+                      if (SPIFFS.exists(testPath)) {
+                        File f = SPIFFS.open("/bbsinfo.dat", "r");
+                        if (f) {
+                          f.readBytes((char *)&bbsclients[i].user, sizeof(bbsclients[i].user));
+                          f.close();
+                          if (strcmp(bbsclients[i].user.password, bbsclients[i].input) == 0) valid = true;
+                        }
                       }
+                      
+                      action(i, valid ? BBS_MAIN : BBS_LOGIN);
+                    } else {
+                      cprintf(i, "Password: ");
+                      getInput(i, '*');
+                    }
+                  break;
+                }
+              break;
+              case BBS_USER:
+                switch (bbsclients[i].stage) {
+                  case STAGE_INIT:
+                    action(i, BBS_USER, BBS_USER_NEW_NAME);
+                  break;
+                  case BBS_USER_NEW_NAME:
+                    if (!bbsclients[i].inputting && strlen(bbsclients[i].input)>0) {
+                      bool valid = true;
+                      for (int j=0;j<strlen(bbsclients[i].input) && valid;j++) {
+                        if (!isalnum(bbsclients[i].input[j])) valid = false;
+                        else bbsclients[i].input[j] = tolower(bbsclients[i].input[j]);
+                      }
+                      if (!valid) {
+                        cprintf(i, "Non-alphanumeric character detected.");
+                      } else {
+                        char testPath[255];
+                        sprintf(testPath, "/users/%s.dat", bbsclients[i].input);
+                        if (SPIFFS.exists(testPath)) {
+                          cprintf(i, "Username '%s' is already taken.", bbsclients[i].input);
+                          valid = false;
+                        } else {
+                          if (strcmp(bbsclients[i].input, "new") == 0 ||
+                              strcmp(bbsclients[i].input, "guest") == 0 ||
+                              strcmp(bbsclients[i].input, "sysop") == 0) {
+                                cprintf(i, "Username '%s' is not allowed.", bbsclients[i].input);
+                                valid = false;
+                              }
+                        }
+                      }
+
+                      if (valid) {
+                        strcpy(bbsclients[i].user.username, bbsclients[i].input);
+                        action(i, BBS_USER, BBS_USER_NEW_PASSWORD);
+                      }
+                    } else {
+                      cprintf(i, "Enter your desired username (lowercase, alphanumeric only): ");
+                      getInput(i);
+                    }
+                  break;
+                  case BBS_USER_NEW_PASSWORD:
+                    if (!bbsclients[i].inputting && strlen(bbsclients[i].input)>0) {
+                      strcpy(bbsclients[i].user.password, bbsclients[i].input);
+                      action(i, BBS_USER, BBS_USER_NEW_CONFIRM);
+                    } else {
+                      cprintf(i, "Enter password (64 character maximum): ");
+                      getInput(i);
+                    }
+                  break;
+                  case BBS_USER_NEW_CONFIRM:
+                    if (!bbsclients[i].inputting && strlen(bbsclients[i].input)>0) {
+                      if (strcmp(bbsclients[i].user.password, bbsclients[i].input) != 0) {
+                        cprintf(i, "Passwords do not match.");
+                        action(i, BBS_USER, BBS_USER_NEW_PASSWORD);
+                      } else {
+                        action(i, BBS_USER, BBS_USER_NEW_FINALIZE);
+                      }
+                    } else {
+                      cprintf(i, "Re-enter password (64 character maximum): ");
+                      getInput(i);
+                    }
+                  break;
+                  case BBS_USER_NEW_FINALIZE:
+                    char userPath[255];
+                    sprintf(userPath, "/users/%s.dat", bbsclients[i].user.username);
+                    File f = SPIFFS.open(userPath, "w+");
+                    if (f) {
+                      f.write((unsigned char *)&bbsclients[i].user, sizeof(bbsclients[i].user));
+                      f.close();
+                      action(i, BBS_MAIN);
+                    } else {
+                      cprintf(i, "Fatal Error - Unable to create user file.");
+                      action(i, BBS_LOGIN);
                     }
                   break;
                 }
