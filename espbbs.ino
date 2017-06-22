@@ -281,7 +281,7 @@ void handleBBSUser(int clientNumber) {
             char testPath[255];
             sprintf(testPath, "/users/%s.dat", bbsclients[clientNumber].input);
             if (SPIFFS.exists(testPath)) {
-              cprintf(clientNumber, "Username '%s' is already taken.", bbsclients[clientNumber].input);
+              cprintf(clientNumber, "Username '%s' is already taken.\r\n", bbsclients[clientNumber].input);
               valid = false;
             } else {
               if (strcmp(bbsclients[clientNumber].input, "new") == 0 ||
@@ -296,6 +296,8 @@ void handleBBSUser(int clientNumber) {
           if (valid) {
             strcpy(bbsclients[clientNumber].user.username, bbsclients[clientNumber].input);
             action(clientNumber, BBS_USER, BBS_USER_NEW_PASSWORD);
+          } else {
+            bbsclients[clientNumber].input[0] = 0;
           }
         } else {
           cprintf(clientNumber, "Enter your desired username (lowercase, alphanumeric only): ");
@@ -310,7 +312,7 @@ void handleBBSUser(int clientNumber) {
           action(clientNumber, BBS_USER, BBS_USER_NEW_CONFIRM);
         } else {
           cprintf(clientNumber, "Enter password (64 character maximum): ");
-          getInput(clientNumber);
+          getInput(clientNumber, '*');
         }
       }
     break;
@@ -325,7 +327,7 @@ void handleBBSUser(int clientNumber) {
           }
         } else {
           cprintf(clientNumber, "Re-enter password (64 character maximum): ");
-          getInput(clientNumber);
+          getInput(clientNumber, '*');
         }
       }
     break;
