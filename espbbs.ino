@@ -53,6 +53,11 @@ WiFiServer server(23);
 #define BBS_USER_NEW_FINALIZE 4
 #define BBS_USER_WHOS_ONLINE  10
 
+// MTNC
+#define BBS_MTNC              7
+#define BBS_MTNC_READ         1
+#define BBS_MTNC_SET          2
+
 char data[1500];
 int ind = 0;
 
@@ -96,6 +101,9 @@ WiFiClient clients[MAX_CLIENTS];
 BBSClient bbsclients[MAX_CLIENTS];
 BBSInfo bbsInfo;
 long connectIndicatorMillis;
+
+#define MTNC_MAX_LENGTH 140
+char mtnc[MTNC_MAX_LENGTH];
 
 void persistBBSInfo() {
   File f = SPIFFS.open("/bbsinfo.dat", "w+");
@@ -423,7 +431,7 @@ void loop() {
                         if (!valid) {
                           cprintf(i, "Username or password incorrect (should be %s).\r\n", bbsclients[i].user.password);
                         }
-                        action(i, valid ? BBS_MAIN : BBS_LOGIN);
+                        action(i, valid ? BBS_MTNC : BBS_LOGIN);
                       } else {
                         cprintf(i, "Password: ");
                         getInput(i, '*');
@@ -439,7 +447,7 @@ void loop() {
                 switch (bbsclients[i].stage) {
                   case STAGE_INIT:
                     cprintf(i, "Welcome, guest!\r\n");
-                    action(i, BBS_MAIN, STAGE_INIT);
+                    action(i, BBS_MTNC);
                   break;
                 }
               break;
@@ -516,6 +524,31 @@ void loop() {
                   
                 }
               break;
+              case BBS_MTNC:
+                switch (bbsclients[i].stage) {
+                  case STAGE_INIT:
+                  case BBS_MTNC_READ:
+                    if (strlen(mtnc)>0) {
+                      cprintf(i, "*************** Message To Next Caller ******************\r\n");
+                      cprintf(i, mtnc);
+                      cprintf(i, "************************************************************\r\n");
+                    }
+                    action(i, BBS_MAIN);
+                  break;
+                  case BBS_MTNC_SET:
+                    if (!bbsclients[i].inputting) {
+                      if (strlen(bbsclients[i].input)) {
+                        snprintf(mtnc, MTNC_MAX_LENGTH, "%s says: %s\r\n", bbsclients[i].user.username, bbsclients[i].input);
+                        cprintf(i, "I'll let them know!\r\n");
+                        action(i, BBS_MAIN);
+                      } else {
+                        cprintf(i, "What would you like to say? (Max. %u characters) ", MTNC_MAX_LENGTH);
+                        getInput(i);
+                      }
+                    }
+                  break;
+                }
+              break;
               case BBS_MAIN:
                 switch (bbsclients[i].stage) {
                   case STAGE_INIT:
@@ -523,6 +556,7 @@ void loop() {
                     cprintf(i, "1) Log Out\r\n");
                     cprintf(i, "2) File Library\r\n");
                     cprintf(i, "3) Who's Online\r\n");
+                    cprintf(i, "4) Leave a Messsage To Next Caller\r\n");
                     getInput(i);
                     action(i, BBS_MAIN, BBS_MAIN_SELECT);
                   break;
@@ -541,6 +575,9 @@ void loop() {
                           break;
                           case '3':
                             action(i, BBS_USER, BBS_USER_WHOS_ONLINE);
+                          break;
+                          case '4':
+                            action(i, BBS_MTNC, BBS_MTNC_SET);
                           break;
                         }
                       }
