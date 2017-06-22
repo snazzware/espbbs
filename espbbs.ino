@@ -349,7 +349,7 @@ void handleBBSUser(int clientNumber) {
         if (clients[j]) {
           cprintf(clientNumber, "Node #%u: %s\r\n", j, bbsclients[j].user.username);
         } else {
-          cprintf(clientNumber, "Node #%u: Open\r\n");
+          cprintf(clientNumber, "Node #%u: Open\r\n", j);
         }
         action(clientNumber, BBS_MAIN);
       }
