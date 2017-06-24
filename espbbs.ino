@@ -90,9 +90,12 @@ struct BBSFileClient {
   bool nonstop;
 };
 
+#define MTNC_MAX_LENGTH 140
+
 struct BBSInfo {
   int callersTotal;
   int callersToday;
+  char mtnc[MTNC_MAX_LENGTH];
 };
 
 #define MAX_CLIENTS 4
@@ -101,9 +104,6 @@ WiFiClient clients[MAX_CLIENTS];
 BBSClient bbsclients[MAX_CLIENTS];
 BBSInfo bbsInfo;
 long connectIndicatorMillis;
-
-#define MTNC_MAX_LENGTH 140
-char mtnc[MTNC_MAX_LENGTH];
 
 void persistBBSInfo() {
   File f = SPIFFS.open("/bbsinfo.dat", "w+");
@@ -530,9 +530,9 @@ void loop() {
                 switch (bbsclients[i].stage) {
                   case STAGE_INIT:
                   case BBS_MTNC_READ:
-                    if (strlen(mtnc)>0) {
+                    if (strlen(bbsInfo.mtnc)>0) {
                       cprintf(i, "*************** Message To Next Caller ******************\r\n");
-                      cprintf(i, mtnc);
+                      cprintf(i, bbsInfo.mtnc);
                       cprintf(i, "************************************************************\r\n");
                     }
                     action(i, BBS_MAIN);
@@ -540,7 +540,7 @@ void loop() {
                   case BBS_MTNC_SET:
                     if (!bbsclients[i].inputting) {
                       if (strlen(bbsclients[i].input)) {
-                        snprintf(mtnc, MTNC_MAX_LENGTH, "%s says: %s\r\n", bbsclients[i].user.username, bbsclients[i].input);
+                        snprintf(bbsInfo.mtnc, MTNC_MAX_LENGTH, "%s says: %s\r\n", bbsclients[i].user.username, bbsclients[i].input);
                         cprintf(i, "I'll let them know!\r\n");
                         action(i, BBS_MAIN);
                       } else {
