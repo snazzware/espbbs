@@ -228,7 +228,9 @@ void pageTextFile(int clientNumber) {
   }
 }
 
-void cprintf(int clientNumber, char *fmt, ...) {
+
+
+void cprintf(int clientNumber, const char *fmt, ...) {
   char buf[255];
   va_list va;
   va_start (va, fmt);
