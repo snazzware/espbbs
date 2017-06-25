@@ -58,6 +58,8 @@ WiFiServer server(23);
 #define BBS_MTNC_READ         1
 #define BBS_MTNC_SET          2
 
+#define BBS_PAUSE             8
+
 char data[1500];
 int ind = 0;
 
@@ -71,6 +73,8 @@ struct BBSUser {
 struct BBSClient {
   int action;
   int stage;
+  int nextAction;
+  int nextStage;
   bool inputting;
   char input[MAX_INPUT];
   int inputPos;
@@ -257,10 +261,12 @@ void getInputSingle(int clientNumber) {
 void discardInput(int clientNumber) {
   bbsclients[clientNumber].input[0] = 0;
   bbsclients[clientNumber].inputPos = 0;
+
+  clients[clientNumber].flush();
 }
 
 bool hasInput(int clientNumber) {
-  return bbsclients[clientNumber].inputPos > 0;
+  return strlen(bbsclients[clientNumber].input) > 0;
 }
 
 void action (int clientNumber, int actionId, int stageId) {
@@ -272,7 +278,19 @@ void action (int clientNumber, int actionId, int stageId) {
 }
 
 void action (int clientNumber, int actionId) {
+  discardInput(clientNumber);
   action(clientNumber, actionId, STAGE_INIT);
+}
+
+void actionWithPause(int clientNumber, int actionId, int stageId) {
+  bbsclients[clientNumber].nextAction = actionId;
+  bbsclients[clientNumber].nextStage = stageId;
+
+  action(clientNumber, BBS_PAUSE);
+}
+
+void actionWithPause(int clientNumber, int actionId) {
+  actionWithPause(clientNumber, actionId, STAGE_INIT);
 }
 
 void handleBBSUser(int clientNumber) {
@@ -457,7 +475,7 @@ void loop() {
                 switch (bbsclients[i].stage) {
                   case STAGE_INIT:
                     cprintf(i, "Welcome, guest!\r\n");
-                    action(i, BBS_MTNC);
+                    actionWithPause(i, BBS_MTNC);
                   break;
                 }
               break;
@@ -536,19 +554,22 @@ void loop() {
                 switch (bbsclients[i].stage) {
                   case STAGE_INIT:
                   case BBS_MTNC_READ:
-                    if (strlen(bbsInfo.mtnc)>0) {
+                    if (strlen(bbsInfo.mtnc)>0) { // If we have a message, display it, then pause before going to main menu
                       cprintf(i, "*************** Message To Next Caller ******************\r\n");
                       cprintf(i, bbsInfo.mtnc);
                       cprintf(i, "************************************************************\r\n");
+
+                      actionWithPause(i, BBS_MAIN);
+                    } else { // Otherwise, just skip to the main menu
+                      action(i, BBS_MAIN);
                     }
-                    action(i, BBS_MAIN);
                   break;
                   case BBS_MTNC_SET:
                     if (!bbsclients[i].inputting) {
                       if (hasInput(i)) {
                         snprintf(bbsInfo.mtnc, MTNC_MAX_LENGTH, "%s says: %s\r\n", bbsclients[i].user.username, bbsclients[i].input);
                         cprintf(i, "I'll let them know!\r\n");
-                        action(i, BBS_MAIN);
+                        actionWithPause(i, BBS_MAIN);
                       } else {
                         cprintf(i, "What would you like to say? (Max. %u characters) ", MTNC_MAX_LENGTH);
                         getInput(i);
@@ -596,6 +617,17 @@ void loop() {
               case BBS_LOGOUT:
                 cprintf(i, "\r\nNO CARRIER\r\n\r\n");
                 clients[i].stop();
+              break;
+              case BBS_PAUSE:
+                if (!bbsclients[i].inputting) {
+                  if (hasInput(i)) {
+                    cprintf(i, "\r\n\r\n");
+                    action(i, bbsclients[i].nextAction, bbsclients[i].nextStage);
+                  } else {
+                    cprintf(i, "\r\n---- Press any key to continue ----");
+                    getInputSingle(i);
+                  }
+                }
               break;
             }
 
