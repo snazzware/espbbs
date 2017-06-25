@@ -204,10 +204,6 @@ void pageTextFile(int clientNumber) {
           client->lineCount = 0;
         }
         client->bufferPosition = i+1;
-        /*if (i+1 != len) {
-          memcpy(((BBSFileClient *)(bbsclients[clientNumber].data))->overflow, buf+i, len - i);
-          ((BBSFileClient *)(bbsclients[clientNumber].data))->overflowSize = len - i;
-        }*/
         return;
       }
     } else {
@@ -241,7 +237,7 @@ void cprintf(int clientNumber, const char *fmt, ...) {
 }
 
 void getInput(int clientNumber) {
-  bbsclients[clientNumber].inputPos = 0;
+  discardInput(clientNumber);
   bbsclients[clientNumber].inputEcho = 0;
   bbsclients[clientNumber].input[0] = 0;
   bbsclients[clientNumber].inputSingle = false;
@@ -256,6 +252,15 @@ void getInput(int clientNumber, char echo) {
 void getInputSingle(int clientNumber) {
   getInput(clientNumber);
   bbsclients[clientNumber].inputSingle = true;
+}
+
+void discardInput(int clientNumber) {
+  bbsclients[clientNumber].input[0] = 0;
+  bbsclients[clientNumber].inputPos = 0;
+}
+
+bool hasInput(int clientNumber) {
+  return bbsclients[clientNumber].inputPos > 0;
 }
 
 void action (int clientNumber, int actionId, int stageId) {
@@ -307,7 +312,7 @@ void handleBBSUser(int clientNumber) {
             strcpy(bbsclients[clientNumber].user.username, bbsclients[clientNumber].input);
             action(clientNumber, BBS_USER, BBS_USER_NEW_PASSWORD);
           } else {
-            bbsclients[clientNumber].input[0] = 0;
+            discardInput(clientNumber);
           }
         } else {
           cprintf(clientNumber, "Enter your desired username (lowercase, alphanumeric only): ");
@@ -386,7 +391,7 @@ void loop() {
                   break;
                   case BBS_LOGIN_USERNAME:
                     if (!bbsclients[i].inputting) {
-                      if (strlen(bbsclients[i].input)) {
+                      if (hasInput(i)) {
                         if (strcmp(bbsclients[i].input, "guest") == 0) {
                           strcpy(bbsclients[i].user.username, "guest");
                           action(i, BBS_GUEST);
@@ -407,9 +412,12 @@ void loop() {
                             
                             action(i, BBS_LOGIN, BBS_LOGIN_PASSWORD);
                           } else {
-                            cprintf(i, "Invalid username. Usernames are lowercase, alphanumeric only.");
+                            cprintf(i, "Invalid username. Usernames are lowercase, alphanumeric only.\r\n");
                           }
                         }
+
+                        // clear input
+                        discardInput(i);
                       } else {
                         cprintf(i, "Node #%u - Username: ", i);
                         getInput(i);
@@ -418,7 +426,7 @@ void loop() {
                   break;
                   case BBS_LOGIN_PASSWORD:
                     if (!bbsclients[i].inputting) {
-                      if (strlen(bbsclients[i].input)) {
+                      if (hasInput(i)) {
                         bool valid = false;
                         char testPath[255];
                         sprintf(testPath, "/users/%s.dat", bbsclients[i].user.username);
@@ -431,7 +439,7 @@ void loop() {
                           }
                         }
                         if (!valid) {
-                          cprintf(i, "Username or password incorrect (should be %s).\r\n", bbsclients[i].user.password);
+                          cprintf(i, "Username or password incorrect.\r\n");
                         }
                         action(i, valid ? BBS_MTNC : BBS_LOGIN);
                       } else {
@@ -485,7 +493,7 @@ void loop() {
                               ((BBSFileClient *)(bbsclients[i].data))->bufferUsed = 0;
                               ((BBSFileClient *)(bbsclients[i].data))->lineCount = 0;
                               ((BBSFileClient *)(bbsclients[i].data))->nonstop = false;
-                              bbsclients[i].input[0] = 0; // clear input
+                              discardInput(i);
                               pageTextFile(i);
                               action(i, BBS_FILES, BBS_FILES_READ);
                             }
@@ -503,7 +511,7 @@ void loop() {
                     } else {
                       if (!bbsclients[i].inputting || ((BBSFileClient *)(bbsclients[i].data))->nonstop) {
                         
-                        if (bbsclients[i].input[0] > 0) {
+                        if (hasInput(i)) {
                           clearEntireLine(i); // clear the prompt
                         }
                         
@@ -517,9 +525,7 @@ void loop() {
                           pageTextFile(i);
                         }
 
-                        // clear the input
-                        bbsclients[i].input[0] = 0;
-                        
+                        discardInput(i);
                       }
                     }
                   } break;
@@ -539,7 +545,7 @@ void loop() {
                   break;
                   case BBS_MTNC_SET:
                     if (!bbsclients[i].inputting) {
-                      if (strlen(bbsclients[i].input)) {
+                      if (hasInput(i)) {
                         snprintf(bbsInfo.mtnc, MTNC_MAX_LENGTH, "%s says: %s\r\n", bbsclients[i].user.username, bbsclients[i].input);
                         cprintf(i, "I'll let them know!\r\n");
                         action(i, BBS_MAIN);
@@ -564,7 +570,7 @@ void loop() {
                   break;
                   case BBS_MAIN_SELECT:
                     if (!bbsclients[i].inputting) {
-                      if (strlen(bbsclients[i].input)==1) {
+                      if (hasInput(i)) {
                         switch (bbsclients[i].input[0]) {
                           case '1':
                             action(i, BBS_LOGOUT);
