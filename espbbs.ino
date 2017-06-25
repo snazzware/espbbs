@@ -228,8 +228,6 @@ void pageTextFile(int clientNumber) {
   }
 }
 
-
-
 void cprintf(int clientNumber, const char *fmt, ...) {
   char buf[255];
   va_list va;
@@ -555,9 +553,9 @@ void loop() {
                   case STAGE_INIT:
                   case BBS_MTNC_READ:
                     if (strlen(bbsInfo.mtnc)>0) { // If we have a message, display it, then pause before going to main menu
-                      cprintf(i, "*************** Message To Next Caller ******************\r\n");
+                      cprintf(i, "\r\n-:|:--:|:--:|:--:|:-[   Message To Next Caller   ]-:|:--:|:--:|:--:|:-\r\n");
                       cprintf(i, bbsInfo.mtnc);
-                      cprintf(i, "************************************************************\r\n");
+                      cprintf(i, "-:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:-\r\n\r\n");
 
                       actionWithPause(i, BBS_MAIN);
                     } else { // Otherwise, just skip to the main menu
