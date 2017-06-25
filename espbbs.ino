@@ -553,9 +553,8 @@ void loop() {
                   case STAGE_INIT:
                   case BBS_MTNC_READ:
                     if (strlen(bbsInfo.mtnc)>0) { // If we have a message, display it, then pause before going to main menu
-                      cprintf(i, "\r\n-:|:--:|:--:|:--:|:-[   Message To Next Caller   ]-:|:--:|:--:|:--:|:-\r\n");
+                      cprintf(i, "\r\n==[ Message To Next Caller ]==================================\r\n");
                       cprintf(i, bbsInfo.mtnc);
-                      cprintf(i, "-:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:-\r\n\r\n");
 
                       actionWithPause(i, BBS_MAIN);
                     } else { // Otherwise, just skip to the main menu
@@ -565,11 +564,11 @@ void loop() {
                   case BBS_MTNC_SET:
                     if (!bbsclients[i].inputting) {
                       if (hasInput(i)) {
-                        snprintf(bbsInfo.mtnc, MTNC_MAX_LENGTH, "%s says: %s\r\n", bbsclients[i].user.username, bbsclients[i].input);
+                        snprintf(bbsInfo.mtnc, MTNC_MAX_LENGTH, "%s says:\r\n%s\r\n", bbsclients[i].user.username, bbsclients[i].input);
                         cprintf(i, "I'll let them know!\r\n");
                         actionWithPause(i, BBS_MAIN);
                       } else {
-                        cprintf(i, "What would you like to say? (Max. %u characters) ", MTNC_MAX_LENGTH);
+                        cprintf(i, "What would you like to say? (Max. %u characters)\r\n", MTNC_MAX_LENGTH);
                         getInput(i);
                       }
                     }
@@ -619,6 +618,7 @@ void loop() {
               case BBS_PAUSE:
                 if (!bbsclients[i].inputting) {
                   if (hasInput(i)) {
+                    clearEntireLine(i); 
                     cprintf(i, "\r\n\r\n");
                     action(i, bbsclients[i].nextAction, bbsclients[i].nextStage);
                   } else {
