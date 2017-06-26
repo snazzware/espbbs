@@ -393,6 +393,14 @@ void loop() {
   char charIn;
   char buffer[16];
   char result;
+
+  // file stuff
+  int pathTokCount = 0;
+  int fileTokCount = 0;
+  char tokBuffer[MAX_PATH];
+  char lastPathComponent[MAX_PATH];
+  char currentPathComponent[MAX_PATH];
+  char *token;
   
   for (int i = 0; i < MAX_CLIENTS; i++) {
       if (clients[i]) {
@@ -480,13 +488,46 @@ void loop() {
               case BBS_FILES:
                 switch (bbsclients[i].stage) {
                   case STAGE_INIT: {
-                      cprintf(i, "Browsing %s\r\n", ((BBSFileClient *)(bbsclients[i].data))->path);
-                      cprintf(i, "B) Go Back\r\n");
-                      
                       Dir dir = SPIFFS.openDir(((BBSFileClient *)(bbsclients[i].data))->path);
                       int idx = 1;
+
+                      lastPathComponent[0] = 0;
+                      currentPathComponent[0] = 0;
+                      pathTokCount = 0;
+                      strcpy(tokBuffer, ((BBSFileClient *)(bbsclients[i].data))->path);
+                      token = strtok(tokBuffer, "/");
+                      while (token != NULL) {
+                        pathTokCount++;
+                        token = strtok(NULL, "/");
+                      }
+
+                      cprintf(i, "Browsing %s\r\n", ((BBSFileClient *)(bbsclients[i].data))->path);
+                      cprintf(i, "X) Exit File Library\r\n");
+                      if (pathTokCount>1) cprintf(i, "B) Go Back\r\n");
+                      
                       while (dir.next()) {
-                        cprintf(i, "%u) %s\r\n", idx++, dir.fileName().c_str());
+                        if (strncmp(dir.fileName().c_str(), ((BBSFileClient *)(bbsclients[i].data))->path, strlen(((BBSFileClient *)(bbsclients[i].data))->path)) == 0) {
+                          fileTokCount = 0;
+                          strcpy(tokBuffer, (char *)dir.fileName().c_str());
+                          token = strtok(tokBuffer, "/");
+                          while (token != NULL) {
+                            fileTokCount++;
+                            token = strtok(NULL, "/");
+                            if (fileTokCount == pathTokCount) {
+                              strcpy(currentPathComponent, token);
+                            }
+                          }
+                          
+                          if (fileTokCount == pathTokCount+1) { // a file within our current path
+                            cprintf(i, "%u) %s\r\n", idx++, dir.fileName().c_str());
+                          } else 
+                          if (fileTokCount > pathTokCount+1) { // path to a file deeper than our current path
+                            if (strcmp(lastPathComponent, currentPathComponent) != 0) {
+                              cprintf(i, "%u) %s/\r\n", idx++, currentPathComponent);
+                              strcpy(lastPathComponent, currentPathComponent);
+                            }
+                          }
+                        }
                       }
                       getInput(i);
             
@@ -495,25 +536,105 @@ void loop() {
                    
                   case BBS_FILES_LIST: {
                     if (!bbsclients[i].inputting) {
-                      if (toupper(bbsclients[i].input[0]) == 'B') {   
+                      if (toupper(bbsclients[i].input[0]) == 'B') { // Back
+                        strcpy(tokBuffer, ((BBSFileClient *)(bbsclients[i].data))->path);
+                        token = strtok(tokBuffer, "/");
+                        
+                        while (token != NULL) {
+                          pathTokCount++;
+                          token = strtok(NULL, "/");
+                        }
+
+                        if (pathTokCount == 1) {
+                          cprintf(i, "You are already at the root directory of this File Library.\r\n");
+                          action(i, BBS_FILES);
+                        } else { // Tokenize the current path, clear path, and copy tokens back in except for last one
+                          strcpy(tokBuffer, ((BBSFileClient *)(bbsclients[i].data))->path);
+                          token = strtok(tokBuffer, "/");
+
+                          ((BBSFileClient *)(bbsclients[i].data))->path[0] = 0;
+                          
+                          while (token != NULL && pathTokCount>1) {
+                            sprintf(((BBSFileClient *)(bbsclients[i].data))->path, "%s/%s", ((BBSFileClient *)(bbsclients[i].data))->path, token);
+                            pathTokCount--;
+                            token = strtok(NULL, "/");
+                          }
+                          action(i, BBS_FILES);
+                        }
+                      } else
+                      if (toupper(bbsclients[i].input[0]) == 'X') {  // Exit File Library
                         action(i, BBS_MAIN);
                       } else {
                         int selection = atoi(bbsclients[i].input);
                         Dir dir = SPIFFS.openDir(((BBSFileClient *)(bbsclients[i].data))->path);
                         if (selection > 0 && selection < 255) {
-                          int readIdx = 1;
-                          while (dir.next() && readIdx <= selection) {
-                            if (readIdx == selection) {
-                              ((BBSFileClient *)(bbsclients[i].data))->f = SPIFFS.open(dir.fileName(), "r");
-                              ((BBSFileClient *)(bbsclients[i].data))->bufferPosition = 0;
-                              ((BBSFileClient *)(bbsclients[i].data))->bufferUsed = 0;
-                              ((BBSFileClient *)(bbsclients[i].data))->lineCount = 0;
-                              ((BBSFileClient *)(bbsclients[i].data))->nonstop = false;
-                              discardInput(i);
-                              pageTextFile(i);
-                              action(i, BBS_FILES, BBS_FILES_READ);
+                          int readIdx = 0;
+                          bool isDirectory = false;
+                          bool fileFound = false;
+
+                          pathTokCount = 0;
+                          lastPathComponent[0] = 0;
+                          currentPathComponent[0] = 0;
+                          
+                          strcpy(tokBuffer, ((BBSFileClient *)(bbsclients[i].data))->path);
+                          token = strtok(tokBuffer, "/");
+                          
+                          while (token != NULL) {
+                            pathTokCount++;
+                            token = strtok(NULL, "/");
+                          }
+
+                          // We have to iterate over files until we reach the same index as the selection from the user
+                          while (dir.next() && readIdx <= selection && !fileFound) {
+                            if (strncmp(dir.fileName().c_str(), ((BBSFileClient *)(bbsclients[i].data))->path, strlen(((BBSFileClient *)(bbsclients[i].data))->path)) == 0) {
+                              fileTokCount = 0;
+                              strcpy(tokBuffer, (char *)dir.fileName().c_str());
+                              token = strtok(tokBuffer, "/");
+                              while (token != NULL) {
+                                fileTokCount++;
+                                token = strtok(NULL, "/");
+                                if (fileTokCount == pathTokCount) {
+                                  strcpy(currentPathComponent, token);
+                                }
+                              }
+                              
+                              if (fileTokCount == pathTokCount+1) { // a file within our current path
+                                readIdx++;
+                                isDirectory = false;
+                              } else 
+                              if (fileTokCount > pathTokCount+1) { // path to a file deeper than our current path
+                                if (strcmp(lastPathComponent, currentPathComponent) != 0) {
+                                  strcpy(lastPathComponent, currentPathComponent);
+                                  readIdx++;
+                                  isDirectory = true;
+                                }
+                              }
                             }
-                            readIdx++;
+                            
+                            if (readIdx == selection) {
+                              fileFound = true;
+                              
+                              if (isDirectory) {
+                                sprintf(((BBSFileClient *)(bbsclients[i].data))->path, "%s/%s", ((BBSFileClient *)(bbsclients[i].data))->path, currentPathComponent);
+                               
+                                action(i, BBS_FILES);
+                              } else {
+                                
+                                ((BBSFileClient *)(bbsclients[i].data))->f = SPIFFS.open(dir.fileName(), "r");
+                                ((BBSFileClient *)(bbsclients[i].data))->bufferPosition = 0;
+                                ((BBSFileClient *)(bbsclients[i].data))->bufferUsed = 0;
+                                ((BBSFileClient *)(bbsclients[i].data))->lineCount = 0;
+                                ((BBSFileClient *)(bbsclients[i].data))->nonstop = false;
+                                discardInput(i);
+                                pageTextFile(i);
+                                action(i, BBS_FILES, BBS_FILES_READ);
+                              }
+                            }
+                          }
+
+                          if (!fileFound) {
+                            cprintf(i, "Invalid selection.\r\n");
+                            action(i, BBS_FILES);
                           }
                         } else { // selection out of bounds
                           action(i, BBS_FILES);
