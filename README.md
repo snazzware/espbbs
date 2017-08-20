@@ -3,6 +3,9 @@ ESPBBS
 
 A BBS (Bulletin Board System) program designed to run on Arduino-compatible ESP8266-based boards, specifically the WEMOS D1 Mini.
 
+Home System:
+* Magnetic Bell BBS - telnet://mabell.snazzware.com:20023
+
 Current functionality:
 * Up to four simultaneous users
 * Guest Login
