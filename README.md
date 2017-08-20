@@ -6,7 +6,8 @@ A BBS (Bulletin Board System) program designed to run on Arduino-compatible ESP8
 Home System:
 * Magnetic Bell BBS - telnet://mabell.snazzware.com:20023
 
-![Magnetic Bell BBS, housed inside a retro payphone fridge magnet.](media/magnetic_bell.jpg?raw=true "Magnetic Bell BBS"){:style="float: right;margin-right: 7px;margin-top: 7px;"}
+![Magnetic Bell BBS, housed inside a retro payphone fridge magnet.](media/magnetic_bell.jpg?raw=true "Magnetic Bell BBS")
+Magnetic Bell BBS's ESP8266 is a WeMos D1 Mini, housed inside a payphone fridge magnet.
 
 Current functionality:
 * Up to four simultaneous users
